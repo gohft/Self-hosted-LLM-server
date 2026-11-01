@@ -1,0 +1,10 @@
+# load dashboard on start up
+apiVersion: 1
+
+# list of dashboard sources
+providers:
+# folder holding the dashboard .json files.
+  - name: default
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

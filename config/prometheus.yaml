@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s  # how often to scrape, default 1 min
+
+# set targets for Prometheus to scrape data from
+scrape_configs:
+  - job_name: vllm
+    metrics_path: /metrics  # vllm expose at this endpoint
+    static_configs:
+      - targets: ["vllm:8000"]  # address to scrape, <service>:<port>

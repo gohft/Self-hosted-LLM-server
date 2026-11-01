@@ -1,0 +1,147 @@
+# all service in one default network and each each other by service name
+# general notes
+# image version 
+# read only files
+#autoheal not in network since access docker only
+# 1) Volumes required
+services:
+  vllm:
+    # fix image version, check no known vulnerabilities
+    image: vllm/vllm-openai:v0.32.0
+    # image automatically starts vllm server, specify file to read config from
+    command: ["--config", "/config/vllm.yaml"]
+    # <source>:<container>:options 
+    # ro is read only in container
+    # for bind mount, mount volume map folder to container, ensuring data persistence
+    # <named volume>:<container>
+    # for named volume, this is to store the LLM weights to prevent redownload
+    volumes:
+      - ./config/vllm.yaml:/config/vllm.yaml:ro
+      - hf_cache:/root/.cache/huggingface   # model weights persist here
+    environment:
+      HF_HOME: /root/.cache/huggingface  # base directory where huggingface download weights
+    ipc: host
+    # container can access GPU in host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    # tell autoheal side car to include this container, autoheal work if service has healthcheck
+    labels:
+      autoheal: "true"
+    # healthcheck to declare container unhealthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20m   # first start downloads + loads weights
+    
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.106.6
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      - ./config/litellm_config.yaml:/app/config.yaml:ro
+    # DATABASE_URL required for virtual key and Admin UI, use the potgres container
+    # admin UI username is `admin` by default, and password is litellm master key
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+    # map local_host:4000 to port 4000 of litellm container
+    # need to establish ssh connection to container to acces admin UI at /ui
+    ports:
+      - "127.0.0.1:4000:4000"  
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vllm:  # if healthy need wait 20mins
+        condition: service_started
+    restart: unless-stopped
+    labels:
+      autoheal: "true"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+  
+  # do not publish port, so only service in docker compose can access it
+  postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5 # after 5 retries, is considered unhealthy
+      start_period: 30s
+   
+  prometheus:
+    image: prom/prometheus:v3.13.2
+    # state directory to write time series data
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus  # default is /prometheus in this image
+      - --storage.tsdb.retention.time=30d  # set retention time of data
+    volumes:
+      - ./config/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - prometheus_data:/prometheus  # need a named volume map to storage 
+    # pubish UI and API to host loop back only, no login needed
+    ports:
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+
+  # dashboard for Prometheus metrics
+  # metrics to display is defined in /dashboards/vllm.json
+  # there are dashboard templates to use from vllm github, but here write own
+  grafana:
+    image: grafana/grafana:13.2.3
+    # set the Gafana admin credentials
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    # need named voilume for internal SQLite file
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    # allow host to view the dashboard at port 3000
+    ports:
+      - "127.0.0.1:3000:3000"   # reach via: ssh -L 3000:localhost:3000 user@host
+    depends_on: [prometheus]
+    restart: unless-stopped
+  
+  # autoheal sidecar, a helper container than runs next to service
+  # check if container has unhealthy status and restarts it
+  autoheal:
+    image: willfarrell/autoheal:1.2.0
+    environment:
+      AUTOHEAL_INTERVAL: 15  # time interval to check container status
+      AUTOHEAL_START_PERIOD: 60
+    # Mounts the host’s Docker socket so that autoheal can access docker status
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    network_mode: none   # only use Docker socket, not connected to services on network
+   
+
+
+# declare named volume managed by docker
+# stored locally
+volumes:
+  hf_cache:
+  pgdata:
+  prometheus_data:
+  grafana_data:

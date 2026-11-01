@@ -1,0 +1,19 @@
+# all vLLM serve options, if not use default
+
+# Hugging Face repo id 
+model: Qwen/Qwen2.5-1.5B-Instruct
+
+# Fixed name exposed to LiteLLM. Do not change when switching models.
+# user will specify this name when sending request to API
+served-model-name: local-llm
+
+# listen to all interfaces so that other container can reach
+host: 0.0.0.0
+
+port: 8000
+
+# add any optional vllm serve options 
+gpu-memory-utilization: 0.80  # fraction of GPU for weights + cache 
+max-model-len: 2048  # context window
+max-num-seqs: 32
+max-num-batched-tokens: 4096

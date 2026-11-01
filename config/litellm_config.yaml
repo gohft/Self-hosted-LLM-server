@@ -1,0 +1,18 @@
+# register model to be used via litellm proxy
+model_list:
+# the model name user call in the API call to access the model (fix to local-llm)
+  - model_name: local-llm
+    litellm_params:
+    # fixed prefix route: hosted_vllm
+    # name must match the "served-model-name" in vLLM
+      model: hosted_vllm/local-llm
+      # this specify the API to access model, which is in vllm serving container port 8000
+      api_base: http://vllm:8000/v1
+      api_key: none
+      # set the cost rate depending on model (to approximate cost)
+      input_cost_per_token: 0.00000005
+      output_cost_per_token: 0.0000001
+
+# drop parameters that backend does not support to continue runnnig
+litellm_settings:
+  drop_params: true
