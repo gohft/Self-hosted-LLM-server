@@ -181,7 +181,7 @@ Assumes [uv](https://docs.astral.sh/uv/) is installed and `pyproject.toml`, `uv.
 
 **a) Start SSH port-forwarding to LiteLLM (port 4000)**
 ```bash
-ssh -L 4000:localhost:4000 <ssh_username>@<host_ip>
+ ssh -N -L 4000:127.0.0.1:4000 <ssh_username>@<host_ip>
 ```
 
 Enter the SSH password. The terminal may look frozen with no output. That is normal. **Keep it open** while using the model.
