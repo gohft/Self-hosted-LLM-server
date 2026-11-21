@@ -1,9 +1,4 @@
 # all service in one default network and each each other by service name
-# general notes
-# image version 
-# read only files
-#autoheal not in network since access docker only
-# 1) Volumes required
 services:
   vllm:
     # fix image version, check no known vulnerabilities
@@ -47,7 +42,7 @@ services:
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     volumes:
       - ./config/litellm_config.yaml:/app/config.yaml:ro
-    # DATABASE_URL required for virtual key and Admin UI, use the potgres container
+    # DATABASE_URL required for virtual key and Admin UI, use the postgres container
     # admin UI username is `admin` by default, and password is litellm master key
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
@@ -72,8 +67,10 @@ services:
       start_period: 90s
   
   # do not publish port, so only service in docker compose can access it
+  # store virtual keys and master key for UI 
   postgres:
     image: postgres:18.6
+    # create non-admin user to use 
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
